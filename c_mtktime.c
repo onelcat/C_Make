@@ -1,18 +1,6 @@
-// 时间戳转换
+#include <time.h>
 #include <stdio.h>
-
-struct tm
-{
-    int tm_sec;  /*秒，正常范围0-59， 但允许至61*/
-    int tm_min;  /*分钟，0-59*/
-    int tm_hour; /*小时， 0-23*/
-    int tm_mday; /*日，即一个月中的第几天，1-31*/
-    int tm_mon;  /*月， 从一月算起，0-11*/  // 1+p->tm_mon;
-    int tm_year;  /*年， 从1900至今已经多少年*/   // 1900＋ p->tm_year;
-    int tm_wday; /*星期，一周中的第几天， 从星期日算起，0-6*/
-    int tm_yday; /*从今年1月1日到目前的天数，范围0-365*/
-    int tm_isdst; /*日光节约时间的旗标*/
-};
+#include <stdlib.h>
 
 #define SECSPERMIN 60L
 #define MINSPERHOUR 60L
@@ -29,22 +17,27 @@ struct tm
 #define EPOCH_YEARS_SINCE_CENTURY 70
 #define EPOCH_YEARS_SINCE_LEAP_CENTURY 370
 
+#define SECSPEGMT8 (8 * SECSPERHOUR)
+
 #define isleap(y) ((((y) % 4) == 0 && ((y) % 100) != 0) || ((y) % 400) == 0)
+
 
 static const int mon_lengths[2][12] = {
     {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31},
     {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}};
 
+static time_t mon_yday[2][12] =
+    {
+        {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334},
+        {0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335},
+};
+
 static const int year_lengths[2] = {
     365,
     366};
 
-struct tm res_buf;
-
-typedef int time_t;
-time_t system_timestam = 0;
 struct tm *
-my_sntp_mktm_r(const time_t *tim_p, struct tm *res, int is_gmtime)
+my_sntp_mktm_r(const time_t *tim_p, struct tm *res)
 {
   long days, rem;
   time_t lcltime;
@@ -109,27 +102,11 @@ my_sntp_mktm_r(const time_t *tim_p, struct tm *res, int is_gmtime)
     days -= ip[res->tm_mon];
   res->tm_mday = days + 1;
 
-  if (!is_gmtime)
   {
-    int offset;
-    int hours, mins, secs;
 
-    //      TZ_LOCK;
-    //      if (_daylight)
-    //	{
-    //	  if (y == __tzyear || __tzcalc_limits (y))
-    //	    res->tm_isdst = (__tznorth
-    //			     ? (*tim_p >= __tzrule[0].change && *tim_p < __tzrule[1].change)
-    //			     : (*tim_p >= __tzrule[0].change || *tim_p < __tzrule[1].change));
-    //	  else
-    //	    res->tm_isdst = -1;
-    //	}
-    //      else
+    int hours, mins, secs,offset;
     res->tm_isdst = 0;
-
-    // 时间偏移 - 8 * 60 * 60 东八区 -去
-
-    offset = -8 * 60 * 60;
+    offset = -SECSPEGMT8;
     hours = offset / SECSPERHOUR;
     offset = offset % SECSPERHOUR;
 
@@ -201,18 +178,43 @@ my_sntp_mktm_r(const time_t *tim_p, struct tm *res, int is_gmtime)
       }
     }
   }
-  else
-    res->tm_isdst = 0;
-
-  printf("res %d-%d-%d %d:%d:%d\r\n",
-  	1900 + res->tm_year, 1+ res->tm_mon, res->tm_mday, 
-  	res->tm_hour,res->tm_min,res->tm_sec);
+  printf("res %d-%d-%d %d:%d:%d\r\n", 1900 + res->tm_year,
+         1 + res->tm_mon, res->tm_mday,
+         res->tm_hour, res->tm_min, res->tm_sec);
   return (res);
+}
+
+long long get_day(int year)
+{
+  year = year - 1;
+  int leap_year_num = year / 4 - year / 100 + year / 400;
+  long long tol_day = year * 365 + leap_year_num;
+  return tol_day;
+}
+
+time_t mymmktime(int year, int mon, int day, int hour, int min, int sec)
+{
+  long long tol_day = 0;
+  // year += 1900;
+  tol_day = get_day(year) - get_day(1970);
+  tol_day += mon_yday[isleap(year)][mon - 1];
+  tol_day += day - 1;
+
+  long long ret = 0;
+  ret += tol_day * SECSPERDAY;
+  ret += hour * SECSPERHOUR;
+  ret += min * SECSPERMIN;
+  ret += sec;
+  // 这部分是时区的 差值
+  return ret - SECSPEGMT8;
 }
 
 int main(int argc, char const *argv[])
 {
-    time_t t = 1508577258;
-	my_sntp_mktm_r(&t, &res_buf, 0);
-	return 0;
+    long tn = 0;
+
+    printf("%s\n", "Hello the world");
+    printf("%ld\n", tn = mymmktime(2017,10,24,11,21,35));
+    my_sntp_mktm_r(&tn,&res_buf);
+    return 0;
 }
